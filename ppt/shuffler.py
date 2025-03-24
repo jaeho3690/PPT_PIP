@@ -74,7 +74,7 @@ class PPT(nn.Module):
         X = rearrange(X, 'b c e p -> b e c p')
         random_idx = torch.randint(0, self.permute_tensor_size - 1, (1,)).to(self.device)
         shuffled_idx = self.permutation_index_tensor[random_idx] 
-        expanded_shuffled_idx = shuffled_idx.expand(X.shape[0], self.channel_num, -1, -1)  # expand idx to match X shape
+        expanded_shuffled_idx = shuffled_idx.expand(X.shape[0], X.shape[1], -1, -1)  # expand idx to match X shape (expand Batch)
         # print device type of expanded_shuffled_idx, X, and X_prime
         X_prime = torch.gather(X, 3, expanded_shuffled_idx) # X_prime is the permuted index
         X_shuffled = rearrange(X_prime, 'b e c p -> b c e p')
