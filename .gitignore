@@ -1,3 +1,6 @@
+ppt/examples/dataset
+*.arff
+*.ts
 *.pt
 venv
 
