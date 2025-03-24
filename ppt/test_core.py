@@ -3,12 +3,11 @@ import torch
 import numpy as np
 import sys
 
-from shuffler import PPTShuffle
-
+from .shuffler import PPT
 
 def test_initialization():
     sample_data = np.random.randn(2, 1, 16, 10).astype(np.float32)  # (Batch, Channel, Embedding, Patch Number)
-    ppt = PPTShuffle(sample_data, original_time_len=160, patch_len=16, permute_freq=2)
+    ppt = PPT(sample_data, original_time_len=160, patch_len=16, permute_freq=2)
     
     assert ppt.original_time_len == 160
     assert ppt.patch_len == 16
@@ -18,7 +17,7 @@ def test_initialization():
 
 def test_forward_shape():
     sample_data = np.random.randn(2, 1, 16, 10).astype(np.float32)
-    ppt = PPTShuffle(sample_data, original_time_len=160, patch_len=16, permute_freq=2, )
+    ppt = PPT(sample_data, original_time_len=160, patch_len=16, permute_freq=2, )
     
     input_tensor = torch.randn(2, 1, 16, 10)  # 같은 차원 유지
     input_tensor = input_tensor
@@ -28,7 +27,7 @@ def test_forward_shape():
 
 # def test_forward_permutation():
 #     sample_data = np.random.randn(1, 1, 16, 10).astype(np.float32)
-#     ppt = PPTShuffle(sample_data, original_time_len=160, patch_len=16, permute_freq=3)
+#     ppt = PPT(sample_data, original_time_len=160, patch_len=16, permute_freq=3)
     
 #     input_tensor = torch.randn(1, 1, 16, 10)
 #     output = ppt(input_tensor)
@@ -37,19 +36,19 @@ def test_forward_shape():
 
 # def test_invalid_inputs():
 #     with pytest.raises(ValueError):
-#         PPTShuffle(np.random.randn(1, 1, 16, 10), original_time_len=150, patch_len=16, permute_freq=2)  # 원본 길이가 패치 길이로 나누어떨어지지 않음
+#         PPT(np.random.randn(1, 1, 16, 10), original_time_len=150, patch_len=16, permute_freq=2)  # 원본 길이가 패치 길이로 나누어떨어지지 않음
     
 #     with pytest.raises(ValueError):
-#         PPTShuffle(np.random.randn(1, 1, 16, 10), original_time_len=160, patch_len=-1, permute_freq=2)  # 패치 길이 음수
+#         PPT(np.random.randn(1, 1, 16, 10), original_time_len=160, patch_len=-1, permute_freq=2)  # 패치 길이 음수
     
 #     with pytest.raises(ValueError):
-#         PPTShuffle(np.random.randn(1, 1, 16, 10), original_time_len=160, patch_len=16, permute_freq=0)  # permute_freq 0
+#         PPT(np.random.randn(1, 1, 16, 10), original_time_len=160, patch_len=16, permute_freq=0)  # permute_freq 0
 
 # def test_permutation_strategy():
 #     sample_data = np.random.randn(1, 1, 16, 10).astype(np.float32)
     
 #     with pytest.raises(ValueError):
-#         PPTShuffle(sample_data, original_time_len=160, patch_len=16, permute_freq=2, permute_strategy="invalid")  # 잘못된 전략
+#         PPT(sample_data, original_time_len=160, patch_len=16, permute_freq=2, permute_strategy="invalid")  # 잘못된 전략
 
 if __name__ == "__main__":
     pytest.main()
