@@ -3,8 +3,10 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
+from multiprocessing import Pool
 from typing import Union, Optional
 from einops import rearrange
+from tqdm.auto import tqdm
 
 class PPT(nn.Module):
     """
@@ -33,6 +35,8 @@ class PPT(nn.Module):
         device: Optional[Union[str, torch.device]] = None,
         seed: int = None,
         save_shuffled_index: bool = True,
+        multiprocessing: bool = False,
+        num_workers: int = 8,
     ):
         super().__init__()
 
@@ -44,6 +48,14 @@ class PPT(nn.Module):
         self.permute_strategy = permute_strategy
         self.permute_tensor_size = permute_tensor_size
         self.save_path = save_path
+        self.multiprocessing = multiprocessing
+        self.num_workers = num_workers
+    
+        if multiprocessing:
+            if num_workers is None:
+                raise ValueError("num_workers must be specified when using multiprocessing")
+            if num_workers < 1:
+                raise ValueError("num_workers must be greater than 0")
     
         # Set random seed for reproducibility
         if seed is not None:
@@ -141,33 +153,77 @@ class PPT(nn.Module):
         return permutation_index_tensor
 
     def _create_permutation_index_tensor(self) -> torch.Tensor:
-        """Create the permutation tensor if the file does not exist."""
         print(f"Creating permutation tensor at {self.save_path}, with strategy {self.permute_strategy}, frequency {self.permute_freq}, and patch length {self.patch_len}")
+        if not self.multiprocessing:
+            return self._create_single_process_permutation()
+        else:
+            return self._create_multi_process_permutation()
+        
+    def _create_single_process_permutation(self) -> torch.Tensor:
+        """Create the permutation tensor if the file does not exist."""
 
         index_data = np.arange(self.patch_num)
 
         total_shuffled_idx = [] # list of {permute_tensor_size} variation of index_data
-        for _ in range(self.permute_tensor_size):
-            single_sample_shuffled_idx_list = []
-            for _ in range(self.channel_num):
-                copy_index_data = index_data.copy()
+        for _ in tqdm(range(self.permute_tensor_size), desc="Creating permutation tensor"):
+            # single_sample_shuffled_idx_list = []
+            # for _ in range(self.channel_num):
+            #     copy_index_data = index_data.copy()
 
-                for _ in range(self.permute_freq):
-                    if self.permute_strategy == "random":
-                        idx1, idx2 = np.random.randint(0, self.patch_num, size=2)
-                    elif self.permute_strategy == "vicinity":
-                        idx1 = np.random.randint(0, len(copy_index_data) - 2)
-                        idx2 = idx1 + 1 
-                    elif self.permute_strategy == "farthest":
-                        idx1, idx2 = random.sample(range(self.patch_num), 2)
-                        while abs(idx1 - idx2) < 2:
-                            idx1, idx2 = random.sample(range(self.patch_num), 2)
-                    else:
-                        raise ValueError(f"permute_strategy must be one of the following: 'random', 'vicinity', 'farthest'")
+            #     for _ in range(self.permute_freq):
+            #         if self.permute_strategy == "random":
+            #             idx1, idx2 = np.random.randint(0, self.patch_num, size=2)
+            #         elif self.permute_strategy == "vicinity":
+            #             idx1 = np.random.randint(0, len(copy_index_data) - 2)
+            #             idx2 = idx1 + 1 
+            #         elif self.permute_strategy == "farthest":
+            #             idx1, idx2 = random.sample(range(self.patch_num), 2)
+            #             while abs(idx1 - idx2) < 2:
+            #                 idx1, idx2 = random.sample(range(self.patch_num), 2)
+            #         else:
+            #             raise ValueError(f"permute_strategy must be one of the following: 'random', 'vicinity', 'farthest'")
                     
-                    copy_index_data[idx1], copy_index_data[idx2] = copy_index_data[idx2], copy_index_data[idx1]
+            #         copy_index_data[idx1], copy_index_data[idx2] = copy_index_data[idx2], copy_index_data[idx1]
 
-                single_sample_shuffled_idx_list.append(copy_index_data)
-            total_shuffled_idx.append(np.stack(single_sample_shuffled_idx_list, axis=0))
+            #     single_sample_shuffled_idx_list.append(copy_index_data)
+            single_sample_shuffled_idx_list = self._permute()
+            total_shuffled_idx.append(single_sample_shuffled_idx_list)
         
         return torch.tensor(np.stack(total_shuffled_idx, axis=0))
+    
+    def _create_multi_process_permutation(self) -> torch.Tensor:
+        print(f"Multiprocessing enabled (be careful with overloading the system and out-of-memory). num_workers: {self.num_workers}")
+        with Pool(self.num_workers) as p:
+            total_shuffled_idx = list(
+                tqdm(
+                    p.imap(self._permute, range(self.permute_tensor_size)),
+                    total=self.permute_tensor_size,
+                    desc="Creating permutation tensor"
+                )
+            )
+        return torch.tensor(np.stack(total_shuffled_idx, axis=0))
+
+    def _permute(self, _) -> np.ndarray:
+        index_data = np.arange(self.patch_num)
+        
+        single_sample_shuffled_idx_list = []
+        for _ in range(self.channel_num):
+            copy_index_data = index_data.copy()
+
+            for _ in range(self.permute_freq):
+                if self.permute_strategy == "random":
+                    idx1, idx2 = np.random.randint(0, self.patch_num, size=2)
+                elif self.permute_strategy == "vicinity":
+                    idx1 = np.random.randint(0, len(copy_index_data) - 2)
+                    idx2 = idx1 + 1 
+                elif self.permute_strategy == "farthest":
+                    idx1, idx2 = random.sample(range(self.patch_num), 2)
+                    while abs(idx1 - idx2) < 2:
+                        idx1, idx2 = random.sample(range(self.patch_num), 2)
+                else:
+                    raise ValueError(f"permute_strategy must be one of the following: 'random', 'vicinity', 'farthest'")
+                
+                copy_index_data[idx1], copy_index_data[idx2] = copy_index_data[idx2], copy_index_data[idx1]
+
+            single_sample_shuffled_idx_list.append(copy_index_data)
+        return np.stack(single_sample_shuffled_idx_list, axis=0)
