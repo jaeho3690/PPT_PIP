@@ -1,8 +1,7 @@
 import numpy as np
 import torch
-# from ppt.shuffler import PPT
-from shuffler import PPT
-# from ppt.metric import ACF_COS
+from ppt.shuffler import PPT
+from ppt.metric import ACF_COS
 
 if __name__ == "__main__":
     # Set random seed for reproducibility
@@ -42,3 +41,22 @@ if __name__ == "__main__":
         print(f"Output shape: {output.shape}")
         print(f"Input device: {input_tensor.device}")
         print(f"Output device: {output.device}")
+        
+    
+    # Test ACF_COS with huge tensor samples (multiprocessing=True)
+    print("\nTesting ACF_COS with huge tensor samples:")
+    print("On CPU (White noise):")
+    device = torch.device("cpu")
+    input_tensor = torch.randn(10, 873, 160, device=device)  # batch_size, channel_num, time_len
+    acf_cos = ACF_COS(channel_num=873, original_time_len=160, patch_len=16, permute_freq=2, device=device, permute_tensor_size=1000, multiprocessing=True, num_workers=8)
+    mean, std = acf_cos(input_tensor)
+    print(f"Mean: {mean}, Std: {std}")
+    
+    print("\nOn CUDA (Step function):")
+    device = torch.device("cuda")
+    input_tensor = torch.arange(10 * 873 * 160).reshape(10, 873, 160).to(device)  # batch_size, channel_num, time_len
+    acf_cos = ACF_COS(channel_num=873, original_time_len=160, patch_len=16, permute_freq=2, device=device, permute_tensor_size=1000, multiprocessing=True, num_workers=8)
+    mean, std = acf_cos(input_tensor)
+    print(f"Mean: {mean}, Std: {std}")
+    
+    
