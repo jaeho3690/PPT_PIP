@@ -1,6 +1,7 @@
 import numpy as np
 import warnings
 import torch
+import warnings
 from multiprocessing import Pool
 from typing import Union, Optional, Tuple
 from .shuffler import PPT
@@ -39,6 +40,11 @@ class ACF_COS(PPT):
             multiprocessing (bool, optional): Whether to use multiprocessing used to shuffle data. Defaults to False.
             num_workers (int, optional): Number of workers for multiprocessing. Defaults to 8.
         """
+        
+        if original_time_len % patch_len != 0:
+            warnings.warn(f"original_time_len {original_time_len} must be divisible by patch_len {patch_len}. Truncating the data to {original_time_len // patch_len * patch_len}")
+            original_time_len = original_time_len // patch_len * patch_len
+        
         super().__init__(
             channel_num=channel_num,
             original_time_len=original_time_len,
@@ -54,7 +60,7 @@ class ACF_COS(PPT):
             num_workers=num_workers
         )
         
-    def forward(self, X: Union[np.ndarray, torch.Tensor]):
+    def forward(self, X: Union[np.ndarray, torch.Tensor], X_shuffled: Optional[Union[np.ndarray, torch.Tensor]] = None, verbose=False) -> np.ndarray:
         """
         Calculate the ACF-COS score for the input
         Given 3D input data (Batch, Channel, Time), it separates the Time dimension into (Patch Length, Patch Number)
@@ -63,41 +69,59 @@ class ACF_COS(PPT):
             X (Union[np.ndarray, torch.Tensor]): Input data to calculate ACF-COS score
                 if 3D data, shape must be (Batch, Channel, Time)
                 if 4D data, shape must be (Batch, Channel, Patch Length, Patch Number)
+                
+                Given X_shuffled, it must be 3D data (Batch, Channel, Time)
+            X_shuffled (Optional[Union[np.ndarray, torch.Tensor]], optional): Shuffled input data to calculate ACF-COS score
+                The shape must be (Batch, Channel, Time)
             
         Returns:
-            Tuple[float, float]: Mean and standard deviation of the ACF-COS score
+            np.ndarray: ACF-COS score for the input data (Channel,)
         """
         
-        dim = len(X.shape)
-        assert dim in [3, 4], f"Input data must be 3D or 4D, got {dim}D"
+        if X_shuffled is None:
+            dim = len(X.shape)
+            assert dim in [3, 4], f"Input data must be 3D or 4D, got {dim}D"
 
-        if dim == 3:
-            print("Input ACF-COS data is 3D (Batch, Channel, Time), trying to spilt the Time dimension into (Patch Length, Patch Number)")
-            X = self._split_time_dim(X)
+            if dim == 3:
+                # Truncate the data if the time length is not divisible by patch length
+                if X.shape[2] != self.original_time_len:
+                    warnings.warn(f"Input time length {X.shape[2]} is not equal to original_time_len {self.original_time_len}. Truncating the data to {self.original_time_len}")
+                    X = X[:, :, :self.original_time_len]
+                    print(f"Truncated data shape: {X.shape}")
+                print("Input ACF-COS data is 3D (Batch, Channel, Time), trying to spilt the Time dimension into (Patch Length, Patch Number)")
+                X = self._split_time_dim(X)
             
-        X_shuffled = super().forward(X)
-        
-        # X_shuffled = (Batch, Channel, Patch Length, Patch Number) -> (Batch, Channel, Time)
-        X = rearrange(X, 'b c l p -> b c (l p)')
-        X_shuffled = rearrange(X_shuffled, 'b c l p -> b c (l p)')
+            X = self._to_torch(X)
+            X_shuffled = super().forward(X)
+            
+            # X_shuffled = (Batch, Channel, Patch Length, Patch Number) -> (Batch, Channel, Time)
+            X = rearrange(X, 'b c l p -> b c (l p)')
+            X_shuffled = rearrange(X_shuffled, 'b c l p -> b c (l p)')
+
+        X = self._to_numpy(X)
+        X_shuffled = self._to_numpy(X_shuffled)
         
         batch, channel, time = X_shuffled.shape
         acf_cos = []
 
-        for c_idx in tqdm(range(channel), desc="Calculating ACF-COS"):
-            _mean = []
-            for b_idx in range(batch):
-                X_acf = self._autocorrelation(X[b_idx, c_idx])
-                X_shuffled_acf = self._autocorrelation(X_shuffled[b_idx, c_idx])
-                
-                _mean.append(self._cosine_similarity(X_acf, X_shuffled_acf))
-            _mean = np.mean(_mean)
-            acf_cos.append(_mean)
+        for c_idx in tqdm(range(channel), desc="Calculating ACF-COS", disable=not verbose):
+            mean_acf_original = np.mean(
+                [
+                    self._autocorrelation(X[b_idx, c_idx, :]) for b_idx in range(batch)
+                ], axis=0
+            )
+            mean_acf_shuffled = np.mean(
+                [
+                    self._autocorrelation(X_shuffled[b_idx, c_idx, :]) for b_idx in range(batch)
+                ], axis=0
+            )
+            
+            cos = self._cosine_similarity(mean_acf_original, mean_acf_shuffled)
+            acf_cos.append(1 - cos)
         
-        acf_cos = 1 - np.array(acf_cos)
-        mean, std = np.mean(acf_cos), np.std(acf_cos)
-
-        return mean, std
+        acf_cos = np.array(acf_cos)
+        
+        return acf_cos
         
     def _split_time_dim(self, X: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
         """
@@ -139,6 +163,21 @@ class ACF_COS(PPT):
             X = X.cpu().detach().numpy()
         return X
     
+    def _to_torch(self, X: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+        """
+        Convert input data to torch tensor
+        
+        Args:
+            X (Union[np.ndarray, torch.Tensor]): Input data to convert to torch tensor
+            
+        Returns:
+            torch.Tensor: Torch tensor of the input data
+        """
+        if isinstance(X, np.ndarray):
+            X = torch.tensor(X)
+            X = X.to(self.device)
+        return X
+    
     def _cosine_similarity(self, x: Union[np.ndarray, torch.Tensor], y: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
         """
         Calculate the cosine similarity between two input data
@@ -173,4 +212,4 @@ class ACF_COS(PPT):
         
         x = self._to_numpy(x)
         corre = np.correlate(x, x, mode='full')
-        return corre[len(corre)//2:]
+        return corre[corre.size // 2:]

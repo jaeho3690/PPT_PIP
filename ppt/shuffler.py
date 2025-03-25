@@ -186,7 +186,7 @@ class PPT(nn.Module):
             #         copy_index_data[idx1], copy_index_data[idx2] = copy_index_data[idx2], copy_index_data[idx1]
 
             #     single_sample_shuffled_idx_list.append(copy_index_data)
-            single_sample_shuffled_idx_list = self._permute()
+            single_sample_shuffled_idx_list = self._permute(None)
             total_shuffled_idx.append(single_sample_shuffled_idx_list)
         
         return torch.tensor(np.stack(total_shuffled_idx, axis=0))

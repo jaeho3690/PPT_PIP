@@ -44,19 +44,30 @@ if __name__ == "__main__":
         
     
     # Test ACF_COS with huge tensor samples (multiprocessing=True)
+    batch_size = 10
+    channel_num = 5
+    time_len = 160
+
     print("\nTesting ACF_COS with huge tensor samples:")
     print("On CPU (White noise):")
+    
     device = torch.device("cpu")
-    input_tensor = torch.randn(10, 873, 160, device=device)  # batch_size, channel_num, time_len
-    acf_cos = ACF_COS(channel_num=873, original_time_len=160, patch_len=16, permute_freq=2, device=device, permute_tensor_size=1000, multiprocessing=True, num_workers=8)
-    mean, std = acf_cos(input_tensor)
+    input_tensor = torch.randn(batch_size, channel_num, time_len, device=device)
+    acf_cos = ACF_COS(channel_num=channel_num, original_time_len=time_len, patch_len=16, permute_freq=2, device=device, permute_tensor_size=1000, multiprocessing=True, num_workers=8)
+    _acf_cos = acf_cos(input_tensor)
+    mean, std = np.mean(_acf_cos), np.std(_acf_cos)
+    for c_idx, value in enumerate(_acf_cos):
+        print(f"Channel {c_idx}: {value}")
     print(f"Mean: {mean}, Std: {std}")
     
     print("\nOn CUDA (Step function):")
     device = torch.device("cuda")
-    input_tensor = torch.arange(10 * 873 * 160).reshape(10, 873, 160).to(device)  # batch_size, channel_num, time_len
-    acf_cos = ACF_COS(channel_num=873, original_time_len=160, patch_len=16, permute_freq=2, device=device, permute_tensor_size=1000, multiprocessing=True, num_workers=8)
-    mean, std = acf_cos(input_tensor)
+    input_tensor = torch.arange(batch_size * channel_num * time_len).reshape(batch_size, channel_num, time_len).to(device)
+    acf_cos = ACF_COS(channel_num=channel_num, original_time_len=time_len, patch_len=16, permute_freq=2, device=device, permute_tensor_size=1000, multiprocessing=True, num_workers=8)
+    _acf_cos = acf_cos(input_tensor)
+    mean, std = np.mean(_acf_cos), np.std(_acf_cos)
+    for c_idx, value in enumerate(_acf_cos):
+        print(f"Channel {c_idx}: {value}")
     print(f"Mean: {mean}, Std: {std}")
     
     
