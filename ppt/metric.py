@@ -90,25 +90,14 @@ class ACF_COS(PPT):
                     print(f"Truncated data shape: {X.shape}")
                 print("Input ACF-COS data is 3D (Batch, Channel, Time), trying to spilt the Time dimension into (Patch Length, Patch Number)")
                 
-                print('#' * 20)
-                print(X)
                 X = self._split_time_dim(X)
             
             X = self._to_torch(X)
             X_shuffled = super().forward(X)
-            
-            # X_shuffled = (Batch, Channel, Patch Length, Patch Number) -> (Batch, Channel, Time)
 
-            print('#' * 20)
-            print(X.shape, X_shuffled.shape)
-            print(X)
-            print(X_shuffled)
-            X = rearrange(X, 'b c l p -> b c (l p)')
-            X_shuffled = rearrange(X_shuffled, 'b c l p -> b c (l p)')
-            print('#' * 20)
-            print(X)
-            print(X_shuffled)
-            
+            # X_shuffled = (Batch, Channel, Patch Length, Patch Number) -> (Batch, Channel, Time)
+            X = rearrange(X, 'b c l p -> b c (p l)')
+            X_shuffled = rearrange(X_shuffled, 'b c l p -> b c (p l)')            
 
         X = self._to_numpy(X)
         X_shuffled = self._to_numpy(X_shuffled)
@@ -145,8 +134,9 @@ class ACF_COS(PPT):
         if valid_time_len != time:
             warnings.warn(f"Input time length {time} is not divisible by patch length {self.patch_len}. Truncating the data to {valid_time_len}")
             X = X[:, :, :valid_time_len]
-            
-        X = rearrange(X, 'b c (l p) -> b c l p', l=self.patch_len, p=self.patch_num)
+        
+        
+        X = rearrange(X, 'b c (p l) -> b c l p', l=self.patch_len, p=self.patch_num)
 
         return X
     
