@@ -89,14 +89,26 @@ class ACF_COS(PPT):
                     X = X[:, :, :self.original_time_len]
                     print(f"Truncated data shape: {X.shape}")
                 print("Input ACF-COS data is 3D (Batch, Channel, Time), trying to spilt the Time dimension into (Patch Length, Patch Number)")
+                
+                print('#' * 20)
+                print(X)
                 X = self._split_time_dim(X)
             
             X = self._to_torch(X)
             X_shuffled = super().forward(X)
             
             # X_shuffled = (Batch, Channel, Patch Length, Patch Number) -> (Batch, Channel, Time)
+
+            print('#' * 20)
+            print(X.shape, X_shuffled.shape)
+            print(X)
+            print(X_shuffled)
             X = rearrange(X, 'b c l p -> b c (l p)')
             X_shuffled = rearrange(X_shuffled, 'b c l p -> b c (l p)')
+            print('#' * 20)
+            print(X)
+            print(X_shuffled)
+            
 
         X = self._to_numpy(X)
         X_shuffled = self._to_numpy(X_shuffled)
@@ -135,7 +147,7 @@ class ACF_COS(PPT):
             X = X[:, :, :valid_time_len]
             
         X = rearrange(X, 'b c (l p) -> b c l p', l=self.patch_len, p=self.patch_num)
-        
+
         return X
     
     def _to_numpy(self, X: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
