@@ -89,36 +89,26 @@ class ACF_COS(PPT):
                     X = X[:, :, :self.original_time_len]
                     print(f"Truncated data shape: {X.shape}")
                 print("Input ACF-COS data is 3D (Batch, Channel, Time), trying to spilt the Time dimension into (Patch Length, Patch Number)")
+                
                 X = self._split_time_dim(X)
             
             X = self._to_torch(X)
             X_shuffled = super().forward(X)
-            
+
             # X_shuffled = (Batch, Channel, Patch Length, Patch Number) -> (Batch, Channel, Time)
-            X = rearrange(X, 'b c l p -> b c (l p)')
-            X_shuffled = rearrange(X_shuffled, 'b c l p -> b c (l p)')
+            X = rearrange(X, 'b c l p -> b c (p l)')
+            X_shuffled = rearrange(X_shuffled, 'b c l p -> b c (p l)')            
 
         X = self._to_numpy(X)
         X_shuffled = self._to_numpy(X_shuffled)
         
-        batch, channel, time = X_shuffled.shape
+        X_acf = self._acf(X)
+        X_shuffled_acf = self._acf(X_shuffled)
         acf_cos = []
-
-        for c_idx in tqdm(range(channel), desc="Calculating ACF-COS", disable=not verbose):
-            mean_acf_original = np.mean(
-                [
-                    self._autocorrelation(X[b_idx, c_idx, :]) for b_idx in range(batch)
-                ], axis=0
+        for i in range(X_acf.shape[0]):
+            acf_cos.append(
+                1 - self._cosine_similarity(X_acf[i], X_shuffled_acf[i])
             )
-            mean_acf_shuffled = np.mean(
-                [
-                    self._autocorrelation(X_shuffled[b_idx, c_idx, :]) for b_idx in range(batch)
-                ], axis=0
-            )
-            
-            cos = self._cosine_similarity(mean_acf_original, mean_acf_shuffled)
-            acf_cos.append(1 - cos)
-        
         acf_cos = np.array(acf_cos)
         
         return acf_cos
@@ -140,13 +130,14 @@ class ACF_COS(PPT):
         assert X.shape[1] == self.channel_num, f"Input data must have the same number of channels as sample_data, got {X.shape[1]} channels"
         
         _, _, time = X.shape
-        valid_time_len = time // self.patch_len * self.patch_len
+        valid_time_len = (time // self.patch_len) * self.patch_len
         if valid_time_len != time:
             warnings.warn(f"Input time length {time} is not divisible by patch length {self.patch_len}. Truncating the data to {valid_time_len}")
             X = X[:, :, :valid_time_len]
-            
-        X = rearrange(X, 'b c (l p) -> b c l p', l=self.patch_len, p=self.patch_num)
         
+        
+        X = rearrange(X, 'b c (p l) -> b c l p', l=self.patch_len, p=self.patch_num)
+
         return X
     
     def _to_numpy(self, X: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
@@ -213,3 +204,24 @@ class ACF_COS(PPT):
         x = self._to_numpy(x)
         corre = np.correlate(x, x, mode='full')
         return corre[corre.size // 2:]
+    
+    def _acf(self, data: np.ndarray) -> np.ndarray:
+        """
+        Calculate the autocorrelation function of the input data
+        
+        Args:
+            data (np.ndarray): Input data to calculate the autocorrelation function
+        
+        Returns:
+            np.ndarray: Autocorrelation function of the input data
+        """
+        
+        flatten_data = data.reshape(-1, data.shape[-1])
+        
+        acf = []
+        for i in range(flatten_data.shape[0]):
+            acf.append(self._autocorrelation(flatten_data[i, :]))
+        acf = np.array(acf)
+        
+        return acf
+        
